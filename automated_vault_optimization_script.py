@@ -1,8 +1,8 @@
 from modules.readConfig import readConfig
 from modules.optimize import optimizeAutomationBoundedGBM
 
-init_portfolio, min_ratio, service_fee, gas_price, volatility, start_price, end_price, time_horizon = readConfig("Automated vault optimization")
-optimal_settings, optimal_expected_return, optimal_returns_debt = optimizeAutomationBoundedGBM(init_portfolio, min_ratio, service_fee, gas_price, volatility, start_price, end_price, time_horizon)
+init_portfolio, min_ratio, service_fee, gas_price, volatility, start_price, end_price, time_horizon, borrow_rate = readConfig("Automated vault optimization")
+optimal_settings, optimal_expected_return, optimal_returns_debt = optimizeAutomationBoundedGBM(init_portfolio, min_ratio, service_fee, gas_price, volatility, start_price, end_price, time_horizon, borrow_rate)
 print('Optimal settings: \n')
 print('Repay from: ', round(optimal_settings[0]), "%")
 print('Repay to: ', round(optimal_settings[1]), "%")

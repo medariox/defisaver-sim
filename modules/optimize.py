@@ -1,68 +1,82 @@
 '''
-Obtain the optimal constant leverage ratio in the continuous limit assuming a given time period, volatility, 
-and underlying return. 
+Obtain the optimal constant leverage ratio in the continuous limit assuming a given time period, volatility,
+and underlying return.
 '''
 
-import numpy as np 
+import numpy as np
 from scipy.optimize import minimize_scalar, minimize
 
 from modules.simulate import simulateLeveragedBoundedGBM
 
-def computeConstantLeverageReturn(leverage_ratio, underlying_return, time_period, volatility):
+def computeConstantLeverageReturn(leverage_ratio, underlying_return, time_period, volatility, borrow_rate):
     '''
-    Compute the return from the constant leverage strategy assuming no cost to borrow and no management fee.
+    Compute the return from the constant leverage strategy assuming no management fee and including the cost of borrow.
 
-    params: 
-
-    leverage_ratio: 
-        the desired constant leverage ratio
-    underlying_return: 
-        return of the underlying asset as a multiple of initial price
-    time_period: 
-        time period in years
-    volatility: 
-        average annualized volatility over the time period
+    params:
+        leverage_ratio:
+            the desired constant leverage ratio
+        underlying_return:
+            return of the underlying asset as a multiple of initial price
+        time_period:
+            time period in years
+        volatility:
+            average annualized volatility over the time period
+        borrow_rate:
+            the annualized rate at which funds are borrowed to maintain leverage
     '''
     l = leverage_ratio
     t = time_period
     vol = volatility
-    return (underlying_return**l)*np.exp(((l-l**2)/2)*(vol**2)*t)
+    br = borrow_rate
 
-def optimizeRatioContinuous(underlying_return, time_period, volatility):
+    # Calculate the gross return from leverage excluding borrowing costs
+    gross_return = (underlying_return**l) * np.exp(((l - l**2) / 2) * (vol**2) * t)
+
+    # Calculate the cost of borrowing
+    borrowing_cost = np.exp(br * (l - 1) * t)
+
+    # Adjust the gross return for the cost of borrowing
+    net_return = gross_return / borrowing_cost
+
+    return net_return
+
+def optimizeRatioContinuous(underlying_return, time_period, volatility, borrow_rate):
     '''
-    Given some basic market conditions, compute the leverage ratio that maximizes the return 
+    Given some basic market conditions, compute the leverage ratio that maximizes the return
     denominated in the debt asset.
 
     If the solution is below 1, return 1 as it means leveraging can only decrease returns.
 
     params:
 
-    underlying_return: 
+    underlying_return:
         return of the underlying asset as a multiple of initial price
-    time_period: 
+    time_period:
         time period in years
-    volatility: 
+    volatility:
         average annualized volatility over the time period
+    borrow_rate:
+            the annualized rate at which funds are borrowed to maintain leverage
 
-    returns: 
-        
-    sol: 
+    returns:
+
+    sol:
         the optimal leverage ratio
-    return: 
+    return:
         the corresponding return
     '''
     def computeReturn(leverage_ratio):
-        return -computeConstantLeverageReturn(leverage_ratio, underlying_return, time_period, volatility)
+        return -computeConstantLeverageReturn(leverage_ratio, underlying_return, time_period, volatility, borrow_rate)
     sol = minimize_scalar(computeReturn)
     if sol.x < 1:
-        return 1, computeConstantLeverageReturn(1, underlying_return, time_period, volatility)
+        return 1, computeConstantLeverageReturn(1, underlying_return, time_period, volatility, borrow_rate)
     return sol.x, abs(sol.fun)
 
-def optimizeAutomationBoundedGBM(initial_portfolio_value, min_ratio, service_fee, gas_price, volatility, start_price, end_price, time_horizon):
+def optimizeAutomationBoundedGBM(initial_portfolio_value, min_ratio, service_fee, gas_price, volatility, start_price, end_price, time_horizon, borrow_rate):
     '''
     Given some real world parameters for DeFi Saver, average gas conditions, and user specified
-    expectations of start price, end price and volatility for the collateral asset, compute the  
-    optimal choice of admissible automation settings to maximizes the expected return. If the expected 
+    expectations of start price, end price and volatility for the collateral asset, compute the
+    optimal choice of admissible automation settings to maximizes the expected return. If the expected
     return is less than the return of the underlying, return an empty list, signifying that automation
     is not a good choice.
     '''
@@ -72,7 +86,7 @@ def optimizeAutomationBoundedGBM(initial_portfolio_value, min_ratio, service_fee
     # Repay from must be 10% greater than min ratio.
     def constraint0(x):
         return x[0] - min_ratio - 10.1
-    # Repay to must be 5% greater than repay from 
+    # Repay to must be 5% greater than repay from
     def constraint1(x):
         return x[1] - x[0] - 5
     # Boost to must be 5% greater than repay to
@@ -111,13 +125,13 @@ def optimizeAutomationBoundedGBM(initial_portfolio_value, min_ratio, service_fee
         return -np.mean(return_in_collateral_asset)
 
     # Look for the optimal leverage ratio in the continuous case to have a good initial guess.
-    L, _ = optimizeRatioContinuous(end_price/start_price, time_horizon, volatility)
+    L, _ = optimizeRatioContinuous(end_price/start_price, time_horizon, volatility, borrow_rate)
     R_init = 100*L/(L-1)
     # print("Optimal L in continuous case: ", L)
     # print("Corresponding ratio: ", R_init)
     if R_init < min_ratio + 10:
         initial_guess = [200, 220, 240, 220]
-    else: 
+    else:
         initial_guess = [R_init - 5, R_init, R_init + 5, R_init]
     print("Optimizing...")
     # Actual optimization routine
